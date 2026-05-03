@@ -9,7 +9,7 @@ async def enviar_telegram(chat_id: str, mensagem: str):
     """Envia mensagem via Telegram"""
     try:
         bot = Bot(token=TELEGRAM_TOKEN)
-        await bot.send_message(chat_id=chat_id, text=mensagem, parse_mode='Markdown')
+        await bot.send_message(chat_id=chat_id, text=mensagem, parse_mode='Markdown', disable_notification=False)
         return {'status': 'sucesso', 'chat_id': chat_id}
     except TelegramError as e:
         return {'status': 'erro', 'chat_id': chat_id, 'erro': str(e)}
