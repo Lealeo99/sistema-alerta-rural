@@ -7,6 +7,7 @@ import os
 from database import init_db, listar_proprietarios, adicionar_proprietario, atualizar_coordenadas
 from geolocalizacao import filtrar_vizinhos, buscar_coordenadas_incra
 from notificador import notificar_vizinhos
+from datetime import datetime
 
 app = FastAPI(title="Sistema de Alerta Rural", version="1.0.0")
 
@@ -42,6 +43,10 @@ def root():
 def listar():
     """Lista todos proprietários cadastrados"""
     return listar_proprietarios()
+
+@app.get("/health")
+def health():
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 @app.post("/proprietarios")
 def cadastrar(prop: ProprietarioModel):
