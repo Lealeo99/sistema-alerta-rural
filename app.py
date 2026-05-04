@@ -9,6 +9,107 @@ from geolocalizacao import filtrar_vizinhos, buscar_coordenadas_incra
 from notificador import notificar_vizinhos
 from datetime import datetime
 
+from fastapi import FastAPI, Form, Request, HTTPException, Depends
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
+from typing import Optional
+import sqlite3
+import os
+
+app = FastAPI(title="Sistema de Alerta Rural", version="2.0.0")
+
+# Configurar templates (pasta "templates" na raiz)
+templates = Jinja2Templates(directory="templates")
+
+# Rota para página principal (interface web)
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_panel(request: Request):
+    conn = sqlite3.connect("fazendas.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, nome, telefone, telegram_id, nome_fazenda, latitude, longitude FROM proprietarios")
+    proprietarios = cursor.fetchall()
+    conn.close()
+    
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "proprietarios": proprietarios,
+        "total": len(proprietarios)
+    })
+
+# Rota para cadastrar (via formulário)
+@app.post("/admin/cadastrar")
+async def cadastrar_proprietario(
+    nome: str = Form(...),
+    telefone: str = Form(...),
+    telegram_id: str = Form(...),
+    nome_fazenda: str = Form(...),
+    latitude: float = Form(...),
+    longitude: float = Form(...)
+):
+    conn = sqlite3.connect("fazendas.db")
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO proprietarios (nome, telefone, telegram_id, nome_fazenda, latitude, longitude)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (nome, telefone, telegram_id, nome_fazenda, latitude, longitude))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin", status_code=303)
+
+# Rota para editar
+@app.post("/admin/editar/{proprietario_id}")
+async def editar_proprietario(
+    proprietario_id: int,
+    nome: str = Form(...),
+    telefone: str = Form(...),
+    telegram_id: str = Form(...),
+    nome_fazenda: str = Form(...),
+    latitude: float = Form(...),
+    longitude: float = Form(...)
+):
+    conn = sqlite3.connect("fazendas.db")
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE proprietarios 
+        SET nome=?, telefone=?, telegram_id=?, nome_fazenda=?, latitude=?, longitude=?
+        WHERE id=?
+    ''', (nome, telefone, telegram_id, nome_fazenda, latitude, longitude, proprietario_id))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin", status_code=303)
+
+# Rota para excluir
+@app.get("/admin/excluir/{proprietario_id}")
+async def excluir_proprietario(proprietario_id: int):
+    conn = sqlite3.connect("fazendas.db")
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM proprietarios WHERE id=?", (proprietario_id,))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin", status_code=303)
+
+# Rota para enviar alerta via formulário
+@app.post("/admin/enviar-alerta")
+async def enviar_alerta_form(
+    latitude: float = Form(...),
+    longitude: float = Form(...),
+    invasor: str = Form(...),
+    raio_km: float = Form(20)
+):
+    # Reutiliza sua lógica existente
+    from notificador import notificar_vizinhos
+    from geolocalizacao import filtrar_vizinhos
+    from database import listar_proprietarios
+    
+    proprietarios = listar_proprietarios()
+    vizinhos = filtrar_vizinhos(proprietarios, latitude, longitude, raio_km)
+    
+    import asyncio
+    await notificar_vizinhos(vizinhos, invasor, latitude, longitude)
+    
+    return RedirectResponse(url="/admin", status_code=303)
+
 app = FastAPI(title="Sistema de Alerta Rural", version="1.0.0")
 
 # Inicializa banco de dados na startup
