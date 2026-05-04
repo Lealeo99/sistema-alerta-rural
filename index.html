@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Alerta Rural</title>
+    <!-- Leaflet CSS/JS para o mapa -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * { box-sizing: border-box; font-family: system-ui, sans-serif; }
+        body { margin: 0; padding: 20px; background: #f0f4f0; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { color: #2d5a2c; display: flex; align-items: center; gap: 10px; }
+        .senha-form { background: white; padding: 15px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .card { background: white; border-radius: 16px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .card h2 { margin-top: 0; color: #1a4a1a; border-bottom: 2px solid #c8e6c8; padding-bottom: 8px; }
+        form { display: flex; flex-direction: column; gap: 12px; }
+        input, select, button { padding: 10px; border-radius: 8px; border: 1px solid #ccc; font-size: 14px; }
+        button { background: #2d5a2c; color: white; font-weight: bold; cursor: pointer; border: none; transition: 0.2s; }
+        button:hover { background: #1e3d1d; }
+        button.danger { background: #b91c1c; }
+        button.danger:hover { background: #7f1a1a; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; }
+        th, td { text-align: left; padding: 8px; border-bottom: 1px solid #ddd; }
+        th { background: #e8f0e8; }
+        .mapa { height: 300px; margin-top: 15px; border-radius: 12px; overflow: hidden; }
+        .badge { background: #2d5a2c; color: white; padding: 4px 8px; border-radius: 20px; font-size: 12px; }
+        .acoes { display: flex; gap: 6px; flex-wrap: wrap; }
+        .btn-peq { padding: 4px 8px; font-size: 12px; background: #4a6fa5; }
+        .btn-peq.danger { background: #b91c1c; }
+        .btn-peq.edit { background: #e68a2e; }
+        .senha-protected { display: none; }
+        .senha-protected.show { display: block; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🚜 Sistema de Alerta Rural</h1>
+    
+    <!-- Bloco de senha para visualizar cadastros -->
+    <div class="senha-form">
+        <label>🔒 Visualizar cadastros (senha: admin123)</label>
+        <input type="password" id="senhaVisu" placeholder="Digite a senha">
+        <button onclick="verCadastros()">Visualizar</button>
+        <div id="senhaErro" style="color:red; margin-top:5px;"></div>
+    </div>
+    
+    <div class="grid">
+        <!-- COLUNA 1: Cadastro e Alerta -->
+        <div>
+            <!-- Cadastro completo -->
+            <div class="card">
+                <h2>📝 Cadastrar Proprietário</h2>
+                <form action="/admin/cadastrar" method="post">
+                    <input type="text" name="nome" placeholder="Nome completo" required>
+                    <input type="tel" name="telefone" placeholder="Telefone (ex: +5561999999999)" required>
+                    <input type="text" name="telegram_id" placeholder="Telegram ID (número ou @usuario)" required>
+                    <input type="text" name="nome_fazenda" placeholder="Nome da fazenda" required>
+                    <input type="number" step="any" name="latitude" placeholder="Latitude (ex: -15.6340)" required id="latCad">
+                    <input type="number" step="any" name="longitude" placeholder="Longitude (ex: -47.8297)" required id="lonCad">
+                    <div id="mapaCad" class="mapa"></div>
+                    <button type="submit">➕ Cadastrar</button>
+                </form>
+            </div>
+            
+            <!-- Alerta -->
+            <div class="card" style="margin-top: 20px;">
+                <h2>🚨 Disparar Alerta</h2>
+                <form action="/admin/enviar-alerta" method="post">
+                    <input type="number" step="any" name="latitude" placeholder="Latitude da invasão" required id="latAlerta">
+                    <input type="number" step="any" name="longitude" placeholder="Longitude da invasão" required id="lonAlerta">
+                    <input type="text" name="invasor" placeholder="Tipo de invasor (ex: javali, pessoa)" required>
+                    <input type="number" step="any" name="raio_km" placeholder="Raio em km (padrão 20)" value="20">
+                    <div id="mapaAlerta" class="mapa"></div>
+                    <button type="submit">📢 Enviar Alerta Agora</button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- COLUNA 2: Lista de cadastros (protegida por senha) -->
+        <div class="card" id="listaProtegida" class="senha-protected">
+            <h2>📋 Cadastros Ativos ({{ total }})</h2>
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr><th>ID</th><th>Nome</th><th>Telefone</th><th>Telegram ID</th><th>Fazenda</th><th>Lat/Long</th><th>Ações</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for prop in proprietarios %}
+                        <tr>
+                            <td>{{ prop[0] }}</td>
+                            <td>{{ prop[1] }}</td>
+                            <td>{{ prop[2] }}</td>
+                            <td>{{ prop[3] }}</td>
+                            <td>{{ prop[4] }}</td>
+                            <td>{{ prop[5] }}, {{ prop[6] }}</td>
+                            <td class="acoes">
+                                <button class="btn-peq edit" onclick="editarProprietario({{ prop[0] }}, '{{ prop[1] }}', '{{ prop[2] }}', '{{ prop[3] }}', '{{ prop[4] }}', {{ prop[5] }}, {{ prop[6] }})">✏️ Editar</button>
+                                <button class="btn-peq danger" onclick="excluirProprietario({{ prop[0] }})">🗑️ Excluir</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de edição (simples) -->
+<div id="modalEditar" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); justify-content:center; align-items:center;">
+    <div style="background:white; padding:20px; border-radius:16px; width:400px;">
+        <h3>✏️ Editar Proprietário</h3>
+        <form id="formEditar" method="post">
+            <input type="text" name="nome" id="editNome" placeholder="Nome" required><br><br>
+            <input type="tel" name="telefone" id="editTelefone" placeholder="Telefone" required><br><br>
+            <input type="text" name="telegram_id" id="editTelegramId" placeholder="Telegram ID" required><br><br>
+            <input type="text" name="nome_fazenda" id="editFazenda" placeholder="Fazenda" required><br><br>
+            <input type="number" step="any" name="latitude" id="editLat" placeholder="Latitude" required><br><br>
+            <input type="number" step="any" name="longitude" id="editLon" placeholder="Longitude" required><br><br>
+            <button type="submit">Salvar alterações</button>
+            <button type="button" onclick="fecharModal()">Cancelar</button>
+        </form>
+    </div>
+</div>
+
+<script>
+    // Mapa para cadastro
+    var mapCad = L.map('mapaCad').setView([-15.6340, -47.8297], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapCad);
+    var markerCad = L.marker([-15.6340, -47.8297], {draggable: true}).addTo(mapCad);
+    markerCad.on('dragend', function(e) {
+        var pos = markerCad.getLatLng();
+        document.getElementById('latCad').value = pos.lat;
+        document.getElementById('lonCad').value = pos.lng;
+    });
+    
+    // Mapa para alerta
+    var mapAlerta = L.map('mapaAlerta').setView([-15.6340, -47.8297], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapAlerta);
+    var markerAlerta = L.marker([-15.6340, -47.8297], {draggable: true}).addTo(mapAlerta);
+    markerAlerta.on('dragend', function(e) {
+        var pos = markerAlerta.getLatLng();
+        document.getElementById('latAlerta').value = pos.lat;
+        document.getElementById('lonAlerta').value = pos.lng;
+    });
+    
+    // Senha para visualizar cadastros
+    function verCadastros() {
+        var senha = document.getElementById('senhaVisu').value;
+        if (senha === 'admin123') {
+            document.getElementById('listaProtegida').style.display = 'block';
+            document.getElementById('senhaErro').innerHTML = '';
+        } else {
+            document.getElementById('senhaErro').innerHTML = 'Senha incorreta. Cadastros protegidos.';
+        }
+    }
+    
+    // Editar (preenche modal)
+    function editarProprietario(id, nome, telefone, telegramId, fazenda, lat, lon) {
+        document.getElementById('editNome').value = nome;
+        document.getElementById('editTelefone').value = telefone;
+        document.getElementById('editTelegramId').value = telegramId;
+        document.getElementById('editFazenda').value = fazenda;
+        document.getElementById('editLat').value = lat;
+        document.getElementById('editLon').value = lon;
+        document.getElementById('formEditar').action = '/admin/editar/' + id;
+        document.getElementById('modalEditar').style.display = 'flex';
+    }
+    
+    function excluirProprietario(id) {
+        if (confirm('Tem certeza que deseja excluir este proprietário?')) {
+            window.location.href = '/admin/excluir/' + id;
+        }
+    }
+    
+    function fecharModal() {
+        document.getElementById('modalEditar').style.display = 'none';
+    }
+    
+    // Opcional: mostrar senha padrão na tela
+    document.getElementById('listaProtegida').style.display = 'none';
+</script>
+</body>
+</html>
